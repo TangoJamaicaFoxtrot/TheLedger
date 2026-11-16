@@ -10,8 +10,9 @@ type Props = {
  onStatus: (id:string,status:SourceStatus)=>void;
  onReflect: (source:Source)=>void;
  onRome: ()=>void;
+ onAddBook: (source:Source)=>void;
 };
-export default function SourceCurriculum({progress,ready,onStatus,onReflect,onRome}:Props) {
+export default function SourceCurriculum({progress,ready,onStatus,onReflect,onRome,onAddBook}:Props) {
  const [visibleCount,setVisibleCount]=useState(12);
  const [view,setView]=useState<'overview'|'areas'|'sources'>('overview');
  const heading=useRef<HTMLHeadingElement>(null);
@@ -67,7 +68,7 @@ export default function SourceCurriculum({progress,ready,onStatus,onReflect,onRo
   <p className="muted">“Explored” means you have engaged with a source to your satisfaction; it does not claim mastery or that you have read every page. Progress stays in this browser and is included in your export.</p>
   {filtered.length===0?<div className="empty"><h3>No sources match these filters.</h3><button className="text-button" onClick={()=>{resetFilters();}}>Clear filters →</button></div>:<div className="source-grid">{visibleSources.map(source=><article className="source-card" key={source.id}>
    <div className="eyebrow">{source.discipline} · {source.topic}</div><h3>{source.title}</h3><p className="source-creator">{source.creator}</p><div className="source-meta"><span>{source.role||'Start here'}</span><span>{source.format}</span><span>{source.access}</span></div>
-   <p>{source.why}</p><div className="source-start"><strong>BEGIN HERE</strong><p>{source.begin}</p></div>
+   <p>{source.why}</p>{source.format==='Book'&&<button className="text-button add-source-book" disabled={!ready} onClick={()=>onAddBook(source)}>+ Add to my library</button>}<div className="source-start"><strong>BEGIN HERE</strong><p>{source.begin}</p></div>
    <a className="source-link" href={source.url} target="_blank" rel="noopener noreferrer">Open source ↗<span className="sr-only">: {source.title} (new tab)</span></a>
    <label htmlFor={`status-${source.id}`}>Your progress</label><select id={`status-${source.id}`} aria-label={`Progress for ${source.title}`} disabled={!ready} value={progress[source.id]||'To explore'} onChange={e=>onStatus(source.id,e.target.value as SourceStatus)}>{sourceStatuses.map(s=><option key={s}>{s}</option>)}</select>
    <button className="text-button" onClick={()=>onReflect(source)}>Keep a note in your journal →</button>

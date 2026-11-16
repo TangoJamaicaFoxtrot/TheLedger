@@ -1,0 +1,76 @@
+'use client';
+import { useEffect, useRef, useState } from 'react';
+import { disciplines } from '@/lib/curriculum';
+import { blankBook, bookError, findBooks, matchingBook, noteKinds, readingStatuses, type Book, type BookNote, type JournalEntry } from '@/lib/library-state';
+type Props = { books: Book[]; entries: JournalEntry[]; ready: boolean; selectedId: string | null; onSelect: (id: string | null) => void; onSave: (books: Book[]) => boolean; onReflect: (book: Book, note?: BookNote) => void; onDirtyChange: (dirty: boolean) => void };
+export default function ReadingLibrary({ books, entries, ready, selectedId, onSelect, onSave, onReflect, onDirtyChange }: Props) {
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('All statuses');
+  const [shelf, setShelf] = useState('Current shelves');
+  const [editor, setEditor] = useState<Book | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [message, setMessage] = useState('');
+  const [note, setNote] = useState<BookNote | null>(null);
+  const [removed, setRemoved] = useState<{ bookId: string; note: BookNote } | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const progressForm = useRef<HTMLFormElement>(null);
+  const selected = books.find(b => b.id === selectedId);
+  useEffect(() => { onDirtyChange(dirty); return () => onDirtyChange(false); }, [dirty, onDirtyChange]);
+  useEffect(() => { heading.current?.focus({ preventScroll: true }); }, [selectedId, !!editor]);
+  function leave() { return !dirty || window.confirm('Leave without saving your book or note changes?'); }
+  function open(id: string | null) { if (!leave()) return; setEditor(null); setNote(null); setDirty(false); setMessage(''); onSelect(id); }
+  function update(book: Book) {
+    if (!ready) return false;
+    const next = books.some(b => b.id === book.id) ? books.map(b => b.id === book.id ? book : b) : [book, ...books];
+    if (!onSave(next)) return false;
+    progressForm.current?.reset(); setMessage('Saved in this browser.'); return true;
+  }
+  function editNote(value?: BookNote) {
+    if (!leave()) return;
+    progressForm.current?.reset();
+    const now = new Date().toISOString();
+    setNote(value || { id: crypto.randomUUID(), kind: 'Thought', text: '', location: '', createdAt: now, updatedAt: now }); setDirty(false);
+  }
+  const filtered = findBooks(books, query, status, shelf);
+  if (editor) return <section className="reading-library"><button className="text-button" onClick={() => { if (leave()) { setEditor(null); setDirty(false); } }}>← Cancel and return</button><h2 ref={heading} tabIndex={-1} className="curriculum-view-title">{books.some(b => b.id === editor.id) ? 'Edit your book' : 'Add to your library'}</h2><BookForm book={editor} ready={ready} onDirty={() => setDirty(true)} onSave={book => {
+    const duplicate = matchingBook(books.filter(b => b.id !== book.id), book.title, book.author);
+    if (duplicate && !window.confirm('A book with this title and author is already in your library. Add another edition?')) return false;
+    if (!update(book)) return false; setEditor(null); setDirty(false); onSelect(book.id); return true;
+  }}/></section>;
+  return <section className="reading-library" aria-label="Reading library">
+    <div className="library-toolbar"><div><span className="eyebrow">YOUR PERSONAL LIBRARY</span><p>{books.filter(b => !b.archived && b.status === 'Reading').length} reading · {books.filter(b => b.status === 'Finished' && !b.archived).length} finished · {books.reduce((n, b) => n + b.notes.length, 0)} {books.reduce((n, b) => n + b.notes.length, 0) === 1 ? 'note' : 'notes'}</p></div><button className="primary" disabled={!ready} onClick={() => { if (leave()) { setEditor(blankBook(crypto.randomUUID())); setNote(null); setDirty(false); } }}>+ Add a book</button></div>
+    {message && <p className="notice" role="status">{message}</p>}
+    {selected ? <>
+      <button className="text-button" onClick={() => open(null)}>← Back to your shelves</button>
+      <div className="book-detail-head"><div className="book-spine" aria-hidden="true">{selected.title.slice(0, 1)}</div><div><span className="eyebrow">{selected.discipline} · {selected.status}{selected.archived ? ' · Archived' : ''}</span><h2 ref={heading} tabIndex={-1} className="curriculum-view-title">{selected.title}</h2><p>{selected.author}</p><div className="tag-list">{selected.tags.map(t => <span key={t}>{t}</span>)}</div><div className="reading-actions"><button className="text-button" disabled={!ready} onClick={() => { if (leave()) { setEditor(selected); setNote(null); setDirty(false); } }}>Edit book details</button><button className="text-button" disabled={!ready} onClick={() => { if (leave()) { setNote(null); setDirty(false); update({ ...selected, archived: !selected.archived }); } }}>{selected.archived ? 'Restore to shelves' : 'Archive book'}</button>{selected.sourceUrl && <a className="source-link" href={selected.sourceUrl} target="_blank" rel="noreferrer">Open reading source ↗</a>}</div></div></div>
+      <div className="book-facts"><div><span>YOUR PLACE</span><strong>{selected.pagesRead}{selected.totalPages ? ` / ${selected.totalPages}` : ''} pages</strong>{selected.totalPages && <progress aria-label="Reading progress" value={selected.pagesRead} max={selected.totalPages}/>}</div><div><span>READING DATES</span><strong>{selected.startedOn || 'Start date not set'} → {selected.finishedOn || 'Open ended'}</strong></div><div><span>YOUR RATING</span><strong>{selected.rating ? `${selected.rating} / 5` : 'Not rated'}</strong></div></div>
+      <form ref={progressForm} className="quick-progress" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); const next = { ...selected, pagesRead: Number(data.get('page')), status: String(data.get('status')) as Book['status'] }; const error = bookError(next); if (error) { setMessage(error); return; } if (update(next)) setDirty(false); }} key={`${selected.id}-${selected.pagesRead}-${selected.status}`}><label>Current page<input name="page" disabled={!ready || !!note} type="number" min="0" step="1" max={selected.totalPages ?? undefined} defaultValue={selected.pagesRead} required onChange={() => setDirty(true)}/></label><label>Reading status<select name="status" disabled={!ready || !!note} defaultValue={selected.status} onChange={() => setDirty(true)}>{readingStatuses.map(s => <option key={s}>{s}</option>)}</select></label><button className="primary" disabled={!ready || !!note}>Save reading progress</button></form>
+      <div className="notebook-layout"><section><div className="section-heading"><h3>Your book notebook</h3><button className="primary" disabled={!ready} onClick={() => editNote()}>+ Add a note</button></div><p className="muted">Capture a thought, keep a quotation, or leave a question open. Add a page or chapter so you can find it again.</p>
+      {note && <form className="note-editor" onSubmit={e => { e.preventDefault(); if (!note.text.trim()) return; const saved = { ...note, text: note.text.trim(), location: note.location.trim(), updatedAt: new Date().toISOString() }; const notes = selected.notes.some(n => n.id === note.id) ? selected.notes.map(n => n.id === note.id ? saved : n) : [saved, ...selected.notes]; if (update({ ...selected, notes })) { setNote(null); setDirty(false); } }}><label>Note type<select value={note.kind} onChange={e => { setNote({ ...note, kind: e.target.value as BookNote['kind'] }); setDirty(true); }}>{noteKinds.map(k => <option key={k}>{k}</option>)}</select></label><label>Page or chapter<input placeholder="e.g. Chapter 12, p. 84" maxLength={200} value={note.location} onChange={e => { setNote({ ...note, location: e.target.value }); setDirty(true); }}/></label><label>{note.kind === 'Quotation' ? 'Quotation and your context' : note.kind === 'Question' ? 'Your question' : 'Your thought'}<textarea autoFocus required rows={6} value={note.text} onChange={e => { setNote({ ...note, text: e.target.value }); setDirty(true); }}/></label><div className="reading-actions"><button className="primary" disabled={!ready}>Save note</button><button type="button" className="text-button" onClick={() => { if (leave()) { setNote(null); setDirty(false); } }}>Cancel note</button></div></form>}
+      {removed?.bookId === selected.id && <p className="notice">Note removed. <button className="text-button" disabled={!ready} onClick={() => { if (update({ ...selected, notes: [removed.note, ...selected.notes] })) setRemoved(null); }}>Undo removal</button></p>}
+      {!selected.notes.length && !note && <div className="empty"><h3>Make this book your own.</h3><p>What surprised you? What would you challenge? Which passage deserves a second reading?</p></div>}
+      {selected.notes.map(n => <article className={`book-note note-${n.kind.toLowerCase()}`} key={n.id}><div className="eyebrow">{n.kind}{n.location ? ` · ${n.location}` : ''}</div><p>{n.text}</p><time dateTime={n.updatedAt}>{new Date(n.updatedAt).toLocaleDateString('en-GB')}</time><div className="reading-actions"><button className="text-button" disabled={!ready} onClick={() => editNote(n)}>Edit note</button><button className="text-button" disabled={!ready} onClick={() => { if (leave()) { setNote(null); setDirty(false); onReflect(selected, n); } }}>Develop in journal ↗</button><button className="text-button" disabled={!ready} onClick={() => { if (!leave()) return; if (update({ ...selected, notes: selected.notes.filter(other => other.id !== n.id) })) { setRemoved({ bookId: selected.id, note: n }); setNote(null); setDirty(false); } }}>Remove note</button></div></article>)}
+      </section><section className="book-reflections"><span className="eyebrow">THE LONGER VIEW</span><h3>Linked reflections</h3><p className="muted">Use the journal for a longer argument or a connection beyond this book.</p><button className="primary" onClick={() => { if (leave()) { setNote(null); setDirty(false); onReflect(selected); } }} disabled={!ready}>Write a reflection ↗</button>{entries.filter(e => e.bookId === selected.id).map(e => <article className="entry" key={e.id}><h3>{e.title}</h3><p>{e.body}</p><time dateTime={e.date}>{new Date(e.date).toLocaleDateString('en-GB')}</time></article>)}</section></div>
+    </> : <>
+      <div className="library-filters"><label>Search your library<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Books, authors, tags, or words in your notes"/></label><label>Reading status<select value={status} onChange={e => setStatus(e.target.value)}><option>All statuses</option>{readingStatuses.map(s => <option key={s}>{s}</option>)}</select></label><label>Shelves<select value={shelf} onChange={e => setShelf(e.target.value)}><option>Current shelves</option><option>Archived</option></select></label></div><p className="muted" role="status">{filtered.length} {filtered.length === 1 ? 'book' : 'books'}{query ? ` matching “${query}”` : ''}</p>
+      {!filtered.length ? <div className="empty"><h3>{books.length ? 'No books on this shelf yet.' : 'Every library begins with one book.'}</h3><p>Add a book of your own, or adjust your search and filters.</p><button className="text-button" onClick={() => { setQuery(''); setStatus('All statuses'); setShelf('Current shelves'); }}>Reset filters</button></div> : <div className="book-shelf">{filtered.map(b => <article className="shelf-book" key={b.id}><div className="eyebrow">{b.discipline} · {b.status}</div><h3><button onClick={() => open(b.id)}>{b.title}</button></h3><p>{b.author}</p><div className="tag-list">{b.tags.map(t => <span key={t}>{t}</span>)}</div><p className="muted">{b.pagesRead}{b.totalPages ? ` / ${b.totalPages}` : ''} pages · {b.notes.length} notes{b.rating ? ` · ${b.rating}/5` : ''}</p><button className="text-button" onClick={() => open(b.id)}>Open book & notebook →</button></article>)}</div>}
+    </>}
+    <p className="muted reading-storage">Your library and notes are saved in this browser. Export your record for a backup; use Restore backup to bring it back.</p>
+  </section>;
+}
+function BookForm({ book, ready, onSave, onDirty }: { book: Book; ready: boolean; onSave: (book: Book) => boolean; onDirty: () => void }) {
+  const [draft, setDraft] = useState(book);
+  const [tags, setTags] = useState(book.tags.join(', '));
+  const [error, setError] = useState('');
+  function field<K extends keyof Book>(key: K, value: Book[K]) { setDraft({ ...draft, [key]: value }); onDirty(); }
+  return <form className="book-form" onSubmit={e => { e.preventDefault(); const next = { ...draft, title: draft.title.trim(), author: draft.author.trim(), sourceUrl: draft.sourceUrl.trim(), tags: [...new Set(tags.split(',').map(t => t.trim()).filter(Boolean))] }; const problem = bookError(next); if (problem) { setError(problem); return; } onSave(next); }}>
+    {error && <p className="notice" role="alert">{error}</p>}
+    <div className="form-pair"><label>Book title<input autoFocus required maxLength={300} value={draft.title} onChange={e => field('title', e.target.value)}/></label><label>Author<input required maxLength={300} value={draft.author} onChange={e => field('author', e.target.value)}/></label></div>
+    <div className="form-pair"><label>Discipline<select value={draft.discipline} onChange={e => field('discipline', e.target.value)}>{[...new Set([...disciplines.map(d => d[0]), draft.discipline])].map(d => <option key={d}>{d}</option>)}</select></label><label>Reading status<select value={draft.status} onChange={e => field('status', e.target.value as Book['status'])}>{readingStatuses.map(s => <option key={s}>{s}</option>)}</select></label></div>
+    <label>Tags, separated by commas<input value={tags} maxLength={500} placeholder="e.g. Rome, power, first-term" onChange={e => { setTags(e.target.value); onDirty(); }}/></label>
+    <div className="form-pair"><label>Current page<input type="number" min="0" step="1" required value={Number.isNaN(draft.pagesRead) ? '' : draft.pagesRead} onChange={e => field('pagesRead', e.target.valueAsNumber)}/></label><label>Total pages · optional<input type="number" min="1" step="1" value={draft.totalPages === null || Number.isNaN(draft.totalPages) ? '' : draft.totalPages} onChange={e => field('totalPages', e.target.value === '' ? null : e.target.valueAsNumber)}/></label></div>
+    <div className="form-pair"><label>Started on · optional<input type="date" value={draft.startedOn} onChange={e => field('startedOn', e.target.value)}/></label><label>Finished on · optional<input type="date" value={draft.finishedOn} onChange={e => field('finishedOn', e.target.value)}/></label></div>
+    <div className="form-pair"><label>Your rating<select value={draft.rating ?? ''} onChange={e => field('rating', e.target.value ? Number(e.target.value) : null)}><option value="">Not rated</option>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} / 5</option>)}</select></label><label>Reading source · optional<input type="url" value={draft.sourceUrl} placeholder="https://…" onChange={e => field('sourceUrl', e.target.value)}/></label></div>
+    <p className="muted">Page counts and dates describe your edition. Finishing a book does not automatically fill them in.</p><button className="primary" disabled={!ready}>Save book</button>
+  </form>;
+}

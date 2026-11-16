@@ -13,9 +13,9 @@ Use Node 22 or later. Run `npm ci`, then `npm run dev`, and open http://localhos
 - Study dashboard with a warm paper and forest-green design.
 - Twelve disciplines, guided by 50% breadth / 50% depth, with independent expeditions.
 - Reading statuses for The Count of Monte Cristo and Atlas Shrugged, based on the founding conversation.
-- Journal entries and reading statuses saved in browser storage, plus JSON export.
+- Journal entries and reading statuses saved in browser storage, plus JSON export and validated backup restoration.
 
-This scaffold has no account system or cloud database. Records stay in the browser and do not sync between devices. Export regularly; clearing browser data removes saved records. No personal journal entries are embedded in the deployed source. Import/restore is not implemented yet.
+This scaffold has no account system or cloud database. Records stay in the browser and do not sync between devices. Export regularly; clearing browser data removes saved records. No personal journal entries are embedded in the deployed source. Restore backup supports full-record JSON restoration.
 
 See [setup and deployment](docs/SETUP.md) before your first push. Supabase authentication, private cloud persistence, editable pathways and the first twelve-week term are future work.
 
@@ -23,7 +23,7 @@ See [setup and deployment](docs/SETUP.md) before your first push. Supabase authe
 
 Curriculum → The Roman Republic → The Birth of Rome opens the first complete chapter, also linked from the study dashboard. The remaining five chapters are marked as planned. The chapter includes a schematic map, evidence-labelled chronology, primary and modern readings, comprehension checks, a source investigation and synthesis/reflection prompts.
 
-Save responses explicitly before leaving. Completion requires all six responses, records a completion date and creates a linked journal reflection. Recompletion updates that reflection rather than duplicating it. Saving edits as a draft reopens the chapter. Existing `ledger-v1` records without course progress continue to load; exports now include `rome.answers` and `rome.completedAt`. All records remain browser-local, without cross-device sync or import/restore.
+Save responses explicitly before leaving. Completion requires all six responses, records a completion date and creates a linked journal reflection. Recompletion updates that reflection rather than duplicating it. Saving edits as a draft reopens the chapter. Existing `ledger-v1` records without course progress continue to load; exports now include `rome.answers` and `rome.completedAt`. All records remain browser-local, without cross-device sync; JSON backup restoration is now available.
 
 ## Curated source curriculum
 
@@ -41,8 +41,18 @@ Each reusable skill view includes equipment, instructions, practice suggestions,
 
 Practice notes support date, optional duration, a breakthrough flag and an optional completed assessment. They can be edited or removed. Saving an assessment with a note is one browser-storage write. Assessment records are separate from notes: removing a note or clearing its association does not revoke competence; use Reopen assessment on the skill page. Deactivating a skill preserves its assessments and notes. Dates and last-practised activity are derived from the records, without streaks or deadlines.
 
-Catalogue data lives in `lib/repertoire.ts`; record types, validation and state transitions live in `lib/repertoire-state.ts`; `components/repertoire.tsx` renders every skill using the same view. Use stable skill and discipline IDs when extending the collection. The parent study component saves the optional `repertoire` field alongside entries, books, Rome progress and source progress in the existing `ledger-v1` record. Older records without the field initialise the launch defaults. Exports include it. Malformed records disable saving rather than resetting stored data. No database, authentication, dependencies or environment variables were added. Records remain browser-local; clearing browser storage loses them, and import/sync are not implemented.
+Catalogue data lives in `lib/repertoire.ts`; record types, validation and state transitions live in `lib/repertoire-state.ts`; `components/repertoire.tsx` renders every skill using the same view. Use stable skill and discipline IDs when extending the collection. The parent study component saves the optional `repertoire` field alongside entries, books, Rome progress and source progress in the existing `ledger-v1` record. Older records without the field initialise the launch defaults. Exports include it. Malformed records disable saving rather than resetting stored data. No database, authentication, dependencies or environment variables were added. Records remain browser-local; clearing browser storage loses them, and cross-device sync is not implemented.
 
 Run `npm test` for catalogue and progress-transition checks, `npm run typecheck` for types and `npm run build` for the production build. There is no separate lint command configured.
 
 Review on branch `codex/gentlemans-repertoire`: run `npm run dev`, open the local URL and test the Repertoire views on desktop/mobile. Review the diff, excluding any unrelated local setup-note edits. After personal identity checks, commit and push this branch for a pull request into `main`. Review the preview and obtain explicit production authorisation before merging; connected Vercel deployments may run automatically. This implementation does not merge, deploy or modify production data.
+
+## Personal reading notebook
+
+The library now supports adding and editing books, tags and disciplines, reading statuses (including paused and abandoned), page progress, optional reading dates and ratings, and reading-source links. Each book has its own thoughts, quotations and questions with page/chapter references. Edit notes, remove with undo, or develop a note into a journal reflection linked to the same book. Archive books to keep shelves tidy without breaking their notes or journal links, and restore them from the Archived shelf. Search includes book titles, authors, tags, subjects and notebook text. Curriculum book sources can be added directly to the personal library.
+
+The journal supports editing, removal with undo, searching and book filters. The study's current book is derived from the first non-archived book marked Reading, with its actual page and note counts.
+
+Existing four-field books and earlier journal entries load without changing IDs or text. Saves/exports now include version 2 of the record, with book details, notebooks and journal links alongside all chapter, curriculum and repertoire progress. Version 1 exports remain readable. **Restore backup** validates an export and previews its counts before explicitly replacing the full browser record. A copy from before the most recent restoration is kept under `ledger-before-restore` and can be downloaded in the restore panel. This is a full replacement, not a merge. Unknown backup versions and malformed records are rejected. If saved data is invalid, saving stays paused and the original data can still be exported for recovery.
+
+Unsaved edits are guarded on navigation and page exit. Changes from another tab pause saving to prevent an older tab from silently overwriting newer records. Browser storage can still be cleared or run out of space; keep external exports. Cloud persistence and account authentication remain future work.
